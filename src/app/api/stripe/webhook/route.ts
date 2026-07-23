@@ -28,6 +28,11 @@ function getInvoiceSubscriptionId(invoice: Stripe.Invoice): string | null {
   );
 }
 
+function getSubscriptionPeriodEnd(subscription: Stripe.Subscription): string | null {
+  const itemPeriodEnd = subscription.items.data[0]?.current_period_end;
+  return itemPeriodEnd ? new Date(itemPeriodEnd * 1000).toISOString() : null;
+}
+
 async function markEvent(
   stripeEventId: string,
   status: "processed" | "failed",
@@ -131,19 +136,18 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
 async function handleSubscriptionChange(subscription: Stripe.Subscription) {
   const userId = subscription.metadata.user_id;
   const planCode = subscription.metadata.plan_code;
+  const customerId = getId(subscription.customer);
 
-  if (!userId || !planCode) return;
+  if (!userId || !planCode || !customerId) return;
 
   const { error } = await getSupabaseAdmin().from("memberships").upsert(
     {
       user_id: userId,
       plan_code: planCode,
-      stripe_customer_id: getId(subscription.customer),
+      stripe_customer_id: customerId,
       stripe_subscription_id: subscription.id,
       status: subscription.status,
-      current_period_end: new Date(
-        subscription.items.data[0]?.current_period_end * 1000
-      ).toISOString(),
+      current_period_end: getSubscriptionPeriodEnd(subscription),
       updated_at: new Date().toISOString()
     },
     { onConflict: "stripe_subscription_id" }
